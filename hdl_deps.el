@@ -311,3 +311,30 @@ easier processing as a stream."
 ;;     (when match
 ;;       (push (intern match) entities)
 ;;       )))))
+
+(defvar teros-hdl-documenter-path
+  "~/work/colibri/bin/teroshdl-hdl-documenter")
+
+(defun teros-hdl-sm-diagram-from-buffer ()
+  (interactive)
+  (teros-hdl-sm-diagram-from-file (buffer-file-name)))
+
+(defun teros-hdl-sm-diagram-from-file (file)
+  (let ((tmp (format "/tmp/%s" (md5 file)))
+        (entity-name (hdldep--vhdl-get-entity-name file)))
+
+    (make-directory tmp t)
+
+    (message (shell-command-to-string
+              (format "%s -o markdown --fsm -i %s --outpath %s"
+                      teros-hdl-documenter-path file tmp)))
+
+    (let ((fname (format "%s/stm_%s_00.svg" tmp entity-name)))
+      (when (file-exists-p fname)
+      (with-selected-window (selected-window)
+        (switch-to-buffer-other-window (find-file-noselect fname t))
+        (revert-buffer t t))))))
+
+(define-key vhdl-mode-map  "\C-c\C-p" 'teros-hdl-sm-diagram-from-buffer)
+
+;;(teros-hdl-sm-diagram-from-file "/home/andrew/work/l0mdt-hdl-design/HAL/tdc/src/tdc_decoder/tdc_packet_processor.vhd")
