@@ -95,13 +95,14 @@ cdr of the list is the dependencies"
 
 (defun hdldep--file-is-verilog (file)
   ""
-  (or (string= (file-name-extension file) ".v")
-      (string= (file-name-extension file) ".sv")))
+  (or (string= (file-name-extension file) "v")
+      (string= (file-name-extension file) "sv")))
 
 (defun hdldep--file-is-vhdl (file)
   ""
-  (or (string= (file-name-extension file) ".vhd")
-      (string= (file-name-extension file) ".vhdl")))
+  (let ((file (buffer-file-name)))
+  (or (string= (file-name-extension file) "vhd")
+      (string= (file-name-extension file) "vhdl"))))
 
 (defun hdldep--vhdl-or-verilog (file func-vhdl func-verilog)
   ""
