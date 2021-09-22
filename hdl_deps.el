@@ -322,7 +322,7 @@ easier processing as a stream."
 
 (defun teros-hdl-sm-diagram-from-file (file)
   (let ((tmp (format "/tmp/%s" (substring (md5 file) 0 8)))
-        (entity-name (hdldep--vhdl-get-entity-name file)))
+        (entity-name (hdldep--get-entity-name file)))
 
     (make-directory tmp t)
 
