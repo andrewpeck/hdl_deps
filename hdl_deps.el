@@ -14,12 +14,18 @@
   (print (type-of dir))
 
   (let* ((file (buffer-file-name))
+         (file-base (file-name-base file))
          (entity (hdldep--vhdl-get-entity-name file)))
     (with-temp-file
-        (format "%s.gv" (file-name-base file))
+        (format "%s.gv" file-base)
       (insert
        (hdldep--create-digraph-for-module dir
-                                          (symbol-name entity))))))
+                                          (symbol-name entity))))
+    (shell-command (format "dot -Tsvg %s.gv -o %s.svg" file-base file-base))
+    (with-selected-window (selected-window)
+      (switch-to-buffer-other-window (find-file-noselect (format "%s.svg" file-base) t))
+      (revert-buffer t t))
+    ))
 
 (defun hdldep--create-digraph-for-module (dir module)
   ""
