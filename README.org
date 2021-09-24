@@ -1,0 +1,6 @@
+#+TITLE:   hdp-deps.el
+#+DATE:    September 22, 2021
+#+SINCE:   <replace with next tagged release version>
+#+STARTUP: inlineimages nofold
+
+Some crude tools for visualizing hdl repositories
