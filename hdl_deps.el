@@ -107,8 +107,8 @@ cdr of the list is the dependencies"
 (defun hdldep--file-is-vhdl (file)
   ""
   (let ((file (buffer-file-name)))
-  (or (string= (file-name-extension file) "vhd")
-      (string= (file-name-extension file) "vhdl"))))
+    (or (string= (file-name-extension file) "vhd")
+        (string= (file-name-extension file) "vhdl"))))
 
 (defun hdldep--vhdl-or-verilog (file func-vhdl func-verilog)
   ""
@@ -338,9 +338,9 @@ easier processing as a stream."
 
     (let ((fname (format "%s/stm_%s_00.svg" tmp entity-name)))
       (when (file-exists-p fname)
-      (with-selected-window (selected-window)
-        (switch-to-buffer-other-window (find-file-noselect fname t))
-        (revert-buffer t t))))))
+        (with-selected-window (selected-window)
+          (switch-to-buffer-other-window (find-file-noselect fname t))
+          (revert-buffer t t))))))
 
 (define-key vhdl-mode-map  "\C-c\C-p" 'teros-hdl-sm-diagram-from-buffer)
 
