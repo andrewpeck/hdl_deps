@@ -4,45 +4,92 @@
 ;;;
 ;;; Code:
 ;;;
+;;; TODO: vhdl packages
+;;; TODO: ip cores
+;;; TODO: auto synth mode
 
 (require 'projectile)
 
-(defun hdldep--graph-current-buffer (dir)
+;;------------------------------------------------------------------------------
+;; Graphviz Generation
+;;------------------------------------------------------------------------------
+
+(defun hdldep-graph-current-buffer (dir)
   ""
-  (interactive (list (read-directory-name "Search Directory:" (projectile-project-root))))
+  (interactive
+   (list (read-directory-name "Search Directory:"
+                              (projectile-project-root))))
   (print dir)
   (print (type-of dir))
 
-  (let* ((file (buffer-file-name))
-         (file-base (file-name-base file))
-         (entity (hdldep--vhdl-get-entity-name file)))
+  (hdldep--graph-buffer (buffer-file-name) dir))
+
+(defun hdldep--graph-buffer (file searchdir)
+  ""
+  (let* ((file-base (file-name-base file))
+         (entity (hdldep--vhdl-parse-entity-name file)))
     (with-temp-file
         (format "%s.gv" file-base)
-      (insert
-       (hdldep--create-digraph-for-module dir
-                                          (symbol-name entity))))
+      (insert (hdldep--gv-for-module searchdir (symbol-name entity))))
     (shell-command (format "dot -Tsvg %s.gv -o %s.svg" file-base file-base))
     (with-selected-window (selected-window)
       (switch-to-buffer-other-window (find-file-noselect (format "%s.svg" file-base) t))
-      (revert-buffer t t))
-    ))
+      (revert-buffer t t))))
 
-(defun hdldep--create-digraph-for-module (dir module)
-  ""
-  (hdldep--create-digraph
-   (delete-dups
-    (hdldep--find-connected-edges
-     (hdldep--get-all-edges
-      (hdldep--get-all-hdl-files dir))
-     (list) (intern module)))))
+(defun hdldep--gv-for-module (dir module)
 
-(defun hdldep--create-digraph (edges)
-  ""
+  "Search the directory DIR for files and create a digraph for the
+selected MODULE.
+
+Dir and module are both specified as strings."
+
+  (hdldep--digraph-to-gv
+   (hdldep--create-digraph-for-module dir module)))
+
+(defun hdldep--digraph-to-gv (edges)
+
+  "Takes a list of edges and converts it into graphviz dot format.
+
+The list of edges takes the form of, for example:
+
+((partition . deghost)
+ (priority_encoder . r)
+ (partition . priority_encoder)
+ (pat_unit_mux . dav_to_phase)
+ (pat_unit . priority_encoder)
+ (pat_unit . hit_count)
+ (pat_unit_mux . pat_unit)
+ (partition . pat_unit_mux)
+ (partition . dav_to_phase)
+ (chamber . partition)
+ (chamber_pulse_extension . pulse_extension)
+ (chamber . chamber_pulse_extension)
+ (chamber . dav_to_phase))
+
+and returns the equivalent output as a graph{}"
+
   (let ((s ""))
     (setq s (concat s "graph {\n"))
     (dolist (edge edges)
       (setq s (concat s (format "   %s -- %s \n" (car edge) (cdr edge)))))
     (setq s (concat s "}\n"))))
+
+;;------------------------------------------------------------------------------
+;; Dependency Finding
+;;------------------------------------------------------------------------------
+
+(defun hdldep--create-digraph-for-module (dir module)
+
+  "Search the directory DIR for files and create a digraph for the
+selected MODULE.
+
+Dir and module are both specified as strings."
+
+  (delete-dups
+   (hdldep--find-connected-edges
+    (hdldep--get-all-edges (hdldep--get-all-hdl-files dir))
+    (list)
+    (intern module))))
 
 (defun hdldep--find-connected-edges (all-edges connected-edges node)
   ""
@@ -63,27 +110,23 @@
 
 (defun hdldep--get-all-hdl-files (dir)
   ""
-  (split-string (shell-command-to-string
-                 (format (concat
-                          "find %s \\("
-                          " -name \"*.vhdl\"" " -o"
-                          " -name \"*.vhd\""  " -o"
-                          " -name \"*.v\""    " -o"
-                          " -name \"*.sv\" "
-                          "\\)")
-                         dir))))
+  (split-string
+   (shell-command-to-string
+    (format (concat "find %s \\("
+                    " -name \"*.vhdl\"" " -o"
+                    " -name \"*.vhd\""  " -o"
+                    " -name \"*.v\""    " -o"
+                    " -name \"*.sv\" " "\\)") dir))))
 
 (defun hdldep--get-all-edges (files)
   ""
   (let ((all-edges nil))
     (dolist (file files)
       (princ (format "Getting edges for %s...\n" file))
-      ;; FIXME: verilog vs. vhdl
       (let ((edges (hdldep--deps-list-to-edges
-                    (hdldep--vhdl-make-deps-list file))))
-        (if edges
-            (setf all-edges (append edges all-edges)))
-        )) (delete-dups all-edges)))
+                    (hdldep--make-deps-list file))))
+        (if edges (setf all-edges (append edges all-edges)))))
+    (delete-dups all-edges)))
 
 (defun hdldep--deps-list-to-edges (deps-list)
   "convert a dependency list deps-list into dot lines.
@@ -91,9 +134,7 @@ car of the list is the module
 cdr of the list is the dependencies"
   (let ((edges nil))
     (dolist (dep (cdr deps-list))
-      (push (cons (car deps-list) dep) edges)
-      )
-    edges))
+      (push (cons (car deps-list) dep) edges)) edges))
 
 ;;------------------------------------------------------------------------------
 ;; Language Agnostic Wrapper
@@ -101,55 +142,54 @@ cdr of the list is the dependencies"
 
 (defun hdldep--file-is-verilog (file)
   ""
-  (or (string= (file-name-extension file) "v")
-      (string= (file-name-extension file) "sv")))
+  (let ((ext (file-name-extension file)))
+    (or (string= ext "v")
+        (string= ext "sv"))))
 
 (defun hdldep--file-is-vhdl (file)
   ""
-  (let ((file (buffer-file-name)))
-    (or (string= (file-name-extension file) "vhd")
-        (string= (file-name-extension file) "vhdl"))))
+  (let ((ext (file-name-extension file)))
+    (or (string= ext "vhd")
+        (string= ext "vhdl"))))
 
 (defun hdldep--vhdl-or-verilog (file func-vhdl func-verilog)
-  ""
-  (cond
-   ((hdldep--file-is-vhdl file)
-    (funcall func-vhdl file))
-   ((hdldep--file-is-verilog file)
-    (funcall func-verilog file))
-   t))
+  "Dispatches function calls to the right flavor of a function.
+TODO: this is really ugly... "
+  (cond ((hdldep--file-is-vhdl file) (funcall func-vhdl file))
+        ((hdldep--file-is-verilog file) (funcall func-verilog file))
+        (t (error (format  "Unrecognized file format %s" file)))))
 
 (defun hdldep--make-deps-list (file)
-  ""
-  (hdldep--vhdl-or-verilog
-   file
-   #'hdldep--verilog-make-deps-list
-   #'hdldep--vhdl-make-deps-list))
+  "For a given FILE, return a list that contains both the module
+in the file itself along with all of its direct dependencies."
+  (append
+   (list (hdldep--parse-entity-name file))
+   (hdldep--get-entities file)))
 
-(defun hdldep--get-entity-name (file)
+(defun hdldep--parse-entity-name (file)
   ""
-  (hdldep--vhdl-or-verilog
-   file
-   #'hdldep--verilog-get-entity-name
-   #'hdldep--vhdl-get-entity-name))
+  (hdldep--vhdl-or-verilog file
+                           #'hdldep--verilog-parse-entity-name
+                           #'hdldep--vhdl-parse-entity-name))
 
 (defun hdldep--get-entities (file)
   ""
-  (hdldep--vhdl-or-verilog
-   file
-   #'hdldep--verilog-get-entities
-   #'hdldep--vhdl-get-entities))
+  (hdldep--vhdl-or-verilog file
+                           #'hdldep--verilog-get-entities
+                           #'hdldep--vhdl-get-entities))
 
 ;;------------------------------------------------------------------------------
-;; VERILOG
+;; Verilog Parsing
 ;;------------------------------------------------------------------------------
 
 ;; FIXME: make the vhdl and verilog common... put them in a macro..?
 
 (defun hdldep--verilog-flatten-buffer ()
+
   "Flatten a Verilog buffer.
-removes all comments and newlines for
-easier processing as a stream."
+
+Removes all comments and newlines for easier processing as a stream."
+
   ;; remove all comments
   (while (re-search-forward "\/\/.*\n" nil t)
     (replace-match ""))
@@ -160,13 +200,7 @@ easier processing as a stream."
     (replace-match " "))
   (goto-char (point-min)))
 
-(defun hdldep--verilog-make-deps-list (file)
-  ""
-  (append
-   (list (hdldep--verilog-get-entity-name file))
-   (hdldep--verilog-get-entities file)))
-
-(defun hdldep--verilog-get-entity-name (file)
+(defun hdldep--verilog-parse-entity-name (file)
   ""
   (with-temp-buffer
     (insert-file-contents file)
@@ -185,7 +219,8 @@ easier processing as a stream."
 
 (defun hdldep--verilog-get-entities (file)
   "Get all entities in VERILOG file FILE."
-  (require 'cl)
+
+  (require 'cl-lib)
   (let ((entities nil))
     (with-temp-buffer
       (insert-file-contents file)
@@ -199,18 +234,20 @@ easier processing as a stream."
                ) nil t)
         (let ((match (match-string 3)))
           (when match
-            (push (intern match) entities)
-            ))))
+            (push (intern match) entities)))))
     (delete-dups entities)))
 
 ;;------------------------------------------------------------------------------
-;; VHDL
+;; VHDL Parsing
 ;;------------------------------------------------------------------------------
 
 (defun hdldep--vhdl-flatten-buffer ()
+
   "Flatten a VHDL buffer.
-removes all comments and newlines for
-easier processing as a stream."
+
+Removes all comments and newlines for easier processing as a
+stream."
+
   ;; remove all comments
   (while (re-search-forward "--.*\n" nil t)
     (replace-match ""))
@@ -221,15 +258,13 @@ easier processing as a stream."
     (replace-match " "))
   (goto-char (point-min)))
 
-;; FIXME this could be made directly language agnostic
-(defun hdldep--vhdl-make-deps-list (file)
-  ""
-  (append
-   (list (hdldep--vhdl-get-entity-name file))
-   (hdldep--vhdl-get-entities file)))
+(defun hdldep--vhdl-parse-entity-name (file)
 
-(defun hdldep--vhdl-get-entity-name (file)
-  ""
+  "Get the first entity name of a given VHDL file.
+
+e.g. for a file which defines a module 'adder', this will return the
+symbol 'adder"
+
   (with-temp-buffer
     (insert-file-contents file)
     (hdldep--vhdl-flatten-buffer)
@@ -239,17 +274,20 @@ easier processing as a stream."
              "\s+"
              "\\([A-z,0-9]+\\)" ;; library
              "\s+"
-             "is"
-             ) nil t 1))
+             "is") nil t 1))
     (let ((match (match-string 1)))
       ;; if there is a match, intern it, otherwise return nil
       (if match (intern match) nil))))
 
-;; FIXME: most of this can be shared between VHDL and verilog
+;; TODO: most of this can be shared between VHDL and verilog
 ;; convert to a macro..?
 (defun hdldep--vhdl-get-entities (file)
-  "Get all entities in VHDL file FILE."
-  (require 'cl)
+
+  "Get all entities instantiated in a vhdl FILE.
+
+Returns a list such as '(adder shift_register) "
+
+  (require 'cl-lib)
   (let ((entities nil))
     (with-temp-buffer
 
@@ -267,23 +305,22 @@ easier processing as a stream."
         (hdldep--vhdl-flatten-buffer)
 
         (extract-entity-name
-         (concat "\\(" "[A-z,0-9]+" "\\)" ;; instance name
+         (concat "\\(" "[A-z,0-9]+" "\\)"       ;; instance name
                  "\s*" ":" "\s*" "entity" "\s+" ;;
-                 "\\(" "[A-z,0-9]+" "\\)" "\." ;; library
-                 "\\(" "[A-z,0-9]+" "\\)" ;; entity
+                 "\\(" "[A-z,0-9]+" "\\)" "\."  ;; library
+                 "\\(" "[A-z,0-9]+" "\\)"       ;; entity
                  ) 3)
 
 
         (extract-entity-name
          (concat "\\([A-z,0-9]+\\)" ;; instance name
-                 "\s*:\s*" ;;
-                 "\\([A-z,0-9]+\\)"  ;; entity
+                 "\s*:\s*"          ;;
+                 "\\([A-z,0-9]+\\)" ;; entity
                  "\s+\\(generic\\|port\\)\s+map"
                  ) 2)
 
-        (goto-char (point-min))
+        (goto-char (point-min))))
 
-        ))
     (delete-dups entities)))
 
 ;; fini
@@ -328,7 +365,7 @@ easier processing as a stream."
 
 (defun teros-hdl-sm-diagram-from-file (file)
   (let ((tmp (format "/tmp/%s" (substring (md5 file) 0 8)))
-        (entity-name (hdldep--get-entity-name file)))
+        (entity-name (hdldep--parse-entity-name file)))
 
     (make-directory tmp t)
 
@@ -342,6 +379,10 @@ easier processing as a stream."
           (switch-to-buffer-other-window (find-file-noselect fname t))
           (revert-buffer t t))))))
 
-(define-key vhdl-mode-map  "\C-c\C-p" 'teros-hdl-sm-diagram-from-buffer)
+(after! vhdl-mode
+  (define-key vhdl-mode-map  "\C-c\C-p" 'teros-hdl-sm-diagram-from-buffer))
 
 ;;(teros-hdl-sm-diagram-from-file "/home/andrew/work/l0mdt-hdl-design/HAL/tdc/src/tdc_decoder/tdc_packet_processor.vhd")
+;;(teros-hdl-sm-diagram-from-file "/home/andrew/work/drs-firmware-daq-debug/drs/src/drs.v")
+
+(provide 'hdl-deps)
